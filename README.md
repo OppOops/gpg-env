@@ -59,6 +59,22 @@
    ```
    > **Note**: If you move it to `~/bin`, ensure `~/bin` is in your shell's PATH.
 
+4. **Optional: Configure alias in .bashrc:**
+   For convenience, you can add an alias to your shell configuration file to use `ge` instead of the full script name:
+   ```bash
+   echo 'alias ge="gpg-env.sh"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+   If you didn't add the script to your PATH in step 3, use the full path to the script:
+   ```bash
+   echo 'alias ge="/path/to/gpg-env.sh"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+   For other shells, add the alias to the appropriate configuration file:
+   - **Zsh**: `~/.zshrc`
+   - **Fish**: `~/.config/fish/config.fish` (using `alias ge="gpg-env.sh"`)
+   - **Bash (macOS)**: `~/.bash_profile`
+
 ## Usage
 
 Navigate to your project's root directory where you want to manage your environment variables.
