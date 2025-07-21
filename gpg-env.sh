@@ -136,9 +136,65 @@ function cmd_view() {
     exit 1
   fi
 
+  local target_variable="$1" # The variable name to view, if provided
+
   echo "Enter passphrase to decrypt $GPG_ENV_FILE:"
   read -s passphrase
-  echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE"
+  
+  DECRYPTED_CONTENT=$(echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE")
+
+  if [ $? -ne 0 ] || [ -z "$DECRYPTED_CONTENT" ]; then
+      echo "Error: Decryption failed or decrypted content is empty. Check passphrase."
+      return 1
+  fi
+
+  if [ -n "$target_variable" ]; then
+    # If a target variable is specified, find and print its value
+    local value=$(echo "$DECRYPTED_CONTENT" | grep "^${target_variable}=" | head -n 1 | cut -d= -f2-)
+    if [ -n "$value" ]; then
+      # Remove surrounding quotes if present
+      value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+      echo "$value"
+    else
+      echo "Variable '$target_variable' not found in $GPG_ENV_FILE."
+      return 1
+    fi
+  else
+    # Otherwise, print the full decrypted content with comment handling
+    local comments_buffer=""
+    while IFS='' read -r line; do # Read full line to handle comments and empty lines
+      local trimmed_line=$(echo "$line" | xargs) # Trim leading/trailing whitespace
+
+      if [[ -z "$trimmed_line" ]]; then
+        continue # Skip truly empty lines
+      elif [[ "$trimmed_line" =~ ^# ]]; then
+        # It's a comment line, add to buffer
+        comments_buffer+="${trimmed_line}\n"
+      else
+        # It's a key-value pair
+        local key=$(echo "$trimmed_line" | cut -d= -f1 | xargs)
+        local value=$(echo "$trimmed_line" | cut -d= -f2- | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+
+        if [ -n "$key" ]; then # Ensure it's a valid key
+          echo -n "$key=$value" # Print key=value
+          if [ -n "$comments_buffer" ]; then
+            # Format comments: remove leading '#' and space, join lines, color cyan
+            local formatted_comments=$(echo -e "$comments_buffer" | sed 's/^#\s*//g' | tr '\n' ' ' | xargs)
+            echo -e " \033[0;36m# $formatted_comments\033[0m" # Print formatted comments in cyan, prefixed with #
+            comments_buffer="" # Clear buffer
+          else
+            echo "" # Newline after key=value if no comments
+          fi
+        fi
+      fi
+    done <<< "$DECRYPTED_CONTENT"
+
+    # Print any remaining trailing comments
+    if [ -n "$comments_buffer" ]; then
+      local formatted_comments=$(echo -e "$comments_buffer" | sed 's/^#\s*//g' | tr '\n' ' ' | xargs)
+      echo -e "\033[0;36m# $formatted_comments\033[0m"
+    fi
+  fi
 }
 
 # cmd_import: Decrypts the GPG file and prints 'export' commands to stdout.
@@ -149,6 +205,8 @@ function cmd_import() {
     echo "Error: $GPG_ENV_FILE not found. Run 'init' first." >&2 # Output error to stderr
     return 1 # Return non-zero status for shell sourcing
   fi
+
+  local target_variable="$1" # The variable name to import, if provided
 
   echo "Enter passphrase to decrypt $GPG_ENV_FILE:" >&2 # Output prompt to stderr
   read -s passphrase
@@ -162,19 +220,87 @@ function cmd_import() {
       return 1
   fi
 
-  # Parse decrypted content line by line and print 'export' commands
-  while IFS='=' read -r key value; do
-    # Skip empty lines and lines starting with '#' (comments)
-    if [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]]; then
-      continue
+  if [ -n "$target_variable" ]; then
+    # If a target variable is specified, parse and export only that one
+    local line=$(echo "$DECRYPTED_CONTENT" | grep "^${target_variable}=" | head -n 1)
+    if [ -n "$line" ]; then
+      local key=$(echo "$line" | cut -d= -f1)
+      local value=$(echo "$line" | cut -d= -f2-)
+      # Trim leading/trailing whitespace and remove quotes from value
+      value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+      printf "export %s=%q\n" "$key" "$value"
+    else
+      echo "Error: Variable '$target_variable' not found in $GPG_ENV_FILE." >&2
+      return 1
     fi
-    # Trim leading/trailing whitespace and remove quotes from key and value
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-    
-    # Print the export command. printf %q safely quotes the value for shell export.
-    printf "export %s=%q\n" "$key" "$value"
-  done <<< "$DECRYPTED_CONTENT" # Use here string to feed content to the while loop
+  else
+    # Parse decrypted content line by line and print 'export' commands for all variables
+    while IFS='=' read -r key value; do
+      # Skip empty lines and lines starting with '#' (comments)
+      if [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]]; then
+        continue
+      fi
+      # Trim leading/trailing whitespace and remove quotes from key and value
+      key=$(echo "$key" | xargs)
+      value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+      
+      # Print the export command. printf %q safely quotes the value for shell export.
+      printf "export %s=%q\n" "$key" "$value"
+    done <<< "$DECRYPTED_CONTENT" # Use here string to feed content to the while loop
+  fi
+}
+
+# cmd_list: Decrypts the GPG file and lists all variable names.
+function cmd_list() {
+  if [ ! -f "$GPG_ENV_FILE" ]; then
+    echo "Error: $GPG_ENV_FILE not found. Run 'init' first."
+    exit 1
+  fi
+
+  echo "Enter passphrase to decrypt $GPG_ENV_FILE:"
+  read -s passphrase
+  
+  DECRYPTED_CONTENT=$(echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE")
+
+  if [ $? -ne 0 ] || [ -z "$DECRYPTED_CONTENT" ]; then
+      echo "Error: Decryption failed or decrypted content is empty. Check passphrase."
+      return 1
+  fi
+
+  echo "Variables in $GPG_ENV_FILE:"
+  local comments_buffer=""
+  while IFS='' read -r line; do # Read full line to handle comments and empty lines
+    local trimmed_line=$(echo "$line" | xargs) # Trim leading/trailing whitespace
+
+    if [[ -z "$trimmed_line" ]]; then
+      continue # Skip truly empty lines
+    elif [[ "$trimmed_line" =~ ^# ]]; then
+      # It's a comment line, add to buffer
+      comments_buffer+="${trimmed_line}\n"
+    else
+      # It's a key-value pair
+      local key=$(echo "$trimmed_line" | cut -d= -f1 | xargs)
+      # We don't need the value for 'list' command, just the key
+
+      if [ -n "$key" ]; then # Ensure it's a valid key
+        echo -n "  - $key" # Print key
+        if [ -n "$comments_buffer" ]; then
+          # Format comments: remove leading '#' and space, join lines, color cyan
+          local formatted_comments=$(echo -e "$comments_buffer" | sed 's/^#\s*//g' | tr '\n' ' ' | xargs)
+          echo -e " \033[0;36m($formatted_comments)\033[0m" # Print formatted comments in cyan
+          comments_buffer="" # Clear buffer
+        else
+          echo "" # Newline after key if no comments
+        fi
+      fi
+    fi
+  done <<< "$DECRYPTED_CONTENT"
+
+  # Print any remaining trailing comments
+  if [ -n "$comments_buffer" ]; then
+    local formatted_comments=$(echo -e "$comments_buffer" | sed 's/^#\s*//g' | tr '\n' ' ' | xargs)
+    echo -e "  \033[0;36m($formatted_comments)\033[0m"
+  fi
 }
 
 # cmd_status: Shows the current status of the GPG-encrypted environment file and available environments.
@@ -354,10 +480,13 @@ case "$1" in
     cmd_edit
     ;;
   view)
-    cmd_view
+    cmd_view $2
     ;;
   import)
-    cmd_import
+    cmd_import $2
+    ;;
+  list)
+    cmd_list
     ;;
   status)
     cmd_status

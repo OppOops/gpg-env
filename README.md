@@ -40,22 +40,22 @@
 
 1. **Download the script:**
    ```bash
-   curl -o gpg-env https://raw.githubusercontent.com/OppOops/gpg-env/refs/heads/main/gpg-env.sh
+   curl -o gpg-env.sh https://raw.githubusercontent.com/your-repo/gpg-env.sh/main/gpg-env.sh
    # Replace with actual URL
    ```
    *(Or simply copy the script content into a file named `gpg-env.sh`)*
 
 2. **Make it executable:**
    ```bash
-   chmod +x gpg-env
+   chmod +x gpg-env.sh
    ```
 
 3. **Optional: Add to your PATH:**
    For easier access, move the script to a directory in your PATH (e.g., `/usr/local/bin` or `~/bin`):
    ```bash
-   sudo mv gpg-env /usr/local/bin/
+   sudo mv gpg-env.sh /usr/local/bin/
    # OR
-   mkdir -p ~/bin && mv gpg-env ~/bin/
+   mkdir -p ~/bin && mv gpg-env.sh ~/bin/
    ```
    > **Note**: If you move it to `~/bin`, ensure `~/bin` is in your shell's PATH.
 
@@ -64,6 +64,16 @@
 Navigate to your project's root directory where you want to manage your environment variables.
 
 ## Commands
+
+### `list`
+Decrypts the environment file and lists only variable names. It skips empty lines and displays any preceding comments for a variable in cyan, next to the variable name.
+
+```bash
+./gpg-env.sh list
+# OR with alias
+ge list
+# Prompts for passphrase, then shows variable names with comments
+```
 
 ### `init`
 Initializes a new encrypted environment file.
@@ -77,6 +87,8 @@ echo "DB_USER=admin" >> .env
 
 # Then initialize the encrypted file
 ./gpg-env.sh init
+# OR with alias
+ge init
 # Prompts for a passphrase to encrypt .env into .env.gpg
 ```
 
@@ -85,24 +97,43 @@ Decrypts the current environment file, opens it in your configured editor, and r
 
 ```bash
 ./gpg-env.sh edit
+# OR with alias
+ge edit
 # Prompts for passphrase, opens editor, re-encrypts on save
 ```
 
 ### `view`
-Decrypts and prints the content of the current environment file to your terminal.
+Decrypts and prints the content of the current environment file to your terminal. When used without a specific variable, it displays all key-value pairs, skipping empty lines and integrating preceding comments in cyan, inline with their respective variables. If a variable is specified, it outputs only that variable's value.
 
 ```bash
+# View all variables with their values and comments
 ./gpg-env.sh view
-# Prompts for passphrase, prints content
+# OR with alias
+ge view
+# Prompts for passphrase, prints all content with comments
+
+# View a specific variable's value only
+./gpg-env.sh view MY_API_KEY
+# OR with alias
+ge view MY_API_KEY
+# Prompts for passphrase, prints only the value of MY_API_KEY
 ```
 
 ### `import`
-Decrypts the current environment file and outputs export commands. This is primarily used for direnv integration.
+Decrypts the current environment file and outputs export commands. This is primarily used for direnv integration. You can import all variables or specify a single variable to import.
 
 ```bash
-# To manually load variables (less common, direnv is preferred)
+# Import all variables (less common, direnv is preferred)
 eval "$(./gpg-env.sh import)"
-# Prompts for passphrase, then variables are loaded into current shell
+# OR with alias
+eval "$(ge import)"
+# Prompts for passphrase, then all variables are loaded into current shell
+
+# Import a specific variable only
+eval "$(./gpg-env.sh import MY_API_KEY)"
+# OR with alias
+eval "$(ge import MY_API_KEY)"
+# Prompts for passphrase, then only MY_API_KEY is loaded into current shell
 ```
 
 ### `status`
@@ -110,6 +141,8 @@ Shows the current GPG environment file in use, indicates if it exists, and lists
 
 ```bash
 ./gpg-env.sh status
+# OR with alias
+ge status
 ```
 
 ### `enable-direnv`
@@ -117,6 +150,8 @@ Configures your project's `.envrc` file to automatically load secrets via direnv
 
 ```bash
 ./gpg-env.sh enable-direnv
+# OR with alias
+ge enable-direnv
 # This will create/update .envrc with necessary lines
 # Follow the instructions to run 'direnv allow'
 ```
@@ -126,6 +161,8 @@ Changes the passphrase for the current encrypted environment file.
 
 ```bash
 ./gpg-env.sh update-pass
+# OR with alias
+ge update-pass
 # Prompts for current and new passphrases
 ```
 
@@ -146,6 +183,8 @@ You can customize gpg-env.sh's behavior by setting these environment variables b
 # Example: Initialize a 'staging' environment
 echo "STAGING_API_KEY=xyz" > .env.staging
 GPG_ENV_PREFIX=staging ./gpg-env.sh init
+# OR with alias
+GPG_ENV_PREFIX=staging ge init
 # This will create .env.staging.gpg
 ```
 
@@ -153,6 +192,8 @@ GPG_ENV_PREFIX=staging ./gpg-env.sh init
 # Example: Using a custom editor
 export GPG_ENV_EDITOR="code --wait"
 ./gpg-env.sh edit
+# OR with alias
+ge edit
 ```
 
 ## Integration with direnv (Recommended)
@@ -162,6 +203,8 @@ export GPG_ENV_EDITOR="code --wait"
 1. **Run `enable-direnv`:**
    ```bash
    ./gpg-env.sh enable-direnv
+   # OR with alias
+   ge enable-direnv
    ```
    This command will create/update your project's `.envrc` file, adding lines to set gpg-env.sh's configuration variables (like `GPG_ENV_PREFIX` if it was set when you ran `enable-direnv`) and the `eval "$($0 import)"` command.
 
