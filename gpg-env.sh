@@ -49,6 +49,15 @@ function get_passphrase() {
   fi
 }
 
+function read_passphrase() {
+  local prompt_msg="${1:-Enter passphrase:}"
+
+  echo "$prompt_msg" >&2
+  read -s passphrase
+  echo "$passphrase"
+}
+
+
 # usage: Prints the script's usage instructions.
 function usage() {
   echo "Usage: $0 <command>"
@@ -64,6 +73,7 @@ function usage() {
   echo "  enable-direnv     : Configures the current directory's .envrc file to automatically load secrets via direnv."
   echo "                    Appends 'eval \"\$($0 import)\"' to .envrc if not present."
   echo "  update-pass       : Changes the passphrase for the encrypted environment file ($GPG_ENV_FILE)."
+  echo "  set-pass          : Set phrase into environment variable (\$GPG_ENV_PASSPHRASE)."
   echo ""
   echo "Configuration Environment Variables (can be set before running commands):"
   echo "  GPG_ENV_FILE      : Path to the encrypted environment file (default: .env.gpg or .env.<prefix>.gpg)"
@@ -92,6 +102,11 @@ function gpg_decrypt() {
 #   $2: Path to the plaintext file to encrypt.
 function gpg_encrypt() {
   gpg --quiet --batch --yes --symmetric --cipher-algo AES256 --passphrase-fd 0 -o "$1" "$2"
+}
+
+
+function cmd_set_passphrase() {
+  export GPG_ENV_PASSPHRASE=$(read_passphrase)
 }
 
 # --- Commands ---
@@ -518,6 +533,9 @@ case "$1" in
     ;;
   update-pass)
     cmd_update_pass
+    ;;
+  set-pass)
+    cmd_set_passphrase
     ;;
   *)
     usage # If no valid command is given, show usage
