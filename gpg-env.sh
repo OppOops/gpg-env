@@ -25,7 +25,6 @@ else
 fi
 GPG_ENV_INIT_FILE="${GPG_ENV_INIT_FILE:-$DEFAULT_INIT_FILE_NAME}"
 
-
 # Modify EDITOR variable:
 # 1. Prioritize GPG_ENV_EDITOR if set.
 # 2. Fallback to existing EDITOR environment variable.
@@ -33,6 +32,22 @@ GPG_ENV_INIT_FILE="${GPG_ENV_INIT_FILE:-$DEFAULT_INIT_FILE_NAME}"
 EDITOR="${GPG_ENV_EDITOR:-${EDITOR:-vim}}"
 
 # --- Helper Functions ---
+
+# get_passphrase: Gets passphrase from GPG_ENV_PASSPHRASE or prompts user
+# Arguments:
+#   $1: Prompt message (optional, defaults to generic message)
+# Returns passphrase via stdout
+function get_passphrase() {
+  local prompt_msg="${1:-Enter passphrase:}"
+  
+  if [ -n "$GPG_ENV_PASSPHRASE" ]; then
+    echo "$GPG_ENV_PASSPHRASE"
+  else
+    echo "$prompt_msg" >&2
+    read -s passphrase
+    echo "$passphrase"
+  fi
+}
 
 # usage: Prints the script's usage instructions.
 function usage() {
@@ -55,6 +70,8 @@ function usage() {
   echo "  GPG_ENV_INIT_FILE : Path to the initial plaintext file for 'init' command (default: .env or .env.<prefix>)"
   echo "  GPG_ENV_EDITOR    : Editor to use for 'edit' command (overrides EDITOR)"
   echo "  GPG_ENV_PREFIX    : Prefix for the environment file (e.g., 'dev' for '.env.dev.gpg')"
+  echo "  GPG_ENV_PASSPHRASE: Passphrase for encryption/decryption (skips interactive prompt if set)"
+  echo "                    WARNING: Setting this in shell history or scripts may expose secrets!"
   exit 1
 }
 
@@ -92,8 +109,7 @@ function cmd_init() {
     exit 1
   fi
 
-  echo "Enter passphrase to encrypt $GPG_ENV_INIT_FILE:"
-  read -s passphrase # Read passphrase silently
+  passphrase=$(get_passphrase "Enter passphrase to encrypt $GPG_ENV_INIT_FILE:")
   echo "$passphrase" | gpg_encrypt "$GPG_ENV_FILE" "$GPG_ENV_INIT_FILE"
   echo "$GPG_ENV_FILE created."
 }
@@ -106,8 +122,7 @@ function cmd_edit() {
     exit 1
   fi
 
-  echo "Enter passphrase to decrypt $GPG_ENV_FILE:"
-  read -s passphrase
+  passphrase=$(get_passphrase "Enter passphrase to decrypt $GPG_ENV_FILE:")
 
   temp_file=$(mktemp) # Create a secure temporary file
   trap 'rm -f "$temp_file"' EXIT # Ensure temp file is removed on script exit
@@ -138,8 +153,7 @@ function cmd_view() {
 
   local target_variable="$1" # The variable name to view, if provided
 
-  echo "Enter passphrase to decrypt $GPG_ENV_FILE:"
-  read -s passphrase
+  passphrase=$(get_passphrase "Enter passphrase to decrypt $GPG_ENV_FILE:")
   
   DECRYPTED_CONTENT=$(echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE")
 
@@ -208,8 +222,7 @@ function cmd_import() {
 
   local target_variable="$1" # The variable name to import, if provided
 
-  echo "Enter passphrase to decrypt $GPG_ENV_FILE:" >&2 # Output prompt to stderr
-  read -s passphrase
+  passphrase=$(get_passphrase "Enter passphrase to decrypt $GPG_ENV_FILE:")
 
   # Decrypt content and capture it in a variable
   DECRYPTED_CONTENT=$(echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE")
@@ -257,8 +270,7 @@ function cmd_list() {
     exit 1
   fi
 
-  echo "Enter passphrase to decrypt $GPG_ENV_FILE:"
-  read -s passphrase
+  passphrase=$(get_passphrase "Enter passphrase to decrypt $GPG_ENV_FILE:")
   
   DECRYPTED_CONTENT=$(echo "$passphrase" | gpg_decrypt "$GPG_ENV_FILE")
 
@@ -350,7 +362,7 @@ function cmd_status() {
 }
 
 # cmd_enable_direnv: Appends the direnv import line to .envrc and suggests 'direnv allow'.
-# It also prepends GPG_ENV_FILE, GPG_ENV_INIT_FILE, GPG_ENV_EDITOR, and GPG_ENV_PREFIX
+# It also prepends GPG_ENV_FILE, GPG_ENV_INIT_FILE, GPG_ENV_EDITOR, GPG_ENV_PREFIX, and GPG_ENV_PASSPHRASE
 # with their current values to the .envrc, if they are not already present.
 function cmd_enable_direnv() {
   local direnv_line="eval \"\$($0 import)\""
@@ -366,6 +378,7 @@ function cmd_enable_direnv() {
   local current_gpg_env_init_file_val="$GPG_ENV_INIT_FILE"
   local current_gpg_env_editor_val="$EDITOR" # Use the resolved EDITOR value
   local current_gpg_env_prefix_val="$GPG_ENV_PREFIX"
+  local current_gpg_env_passphrase_val="$GPG_ENV_PASSPHRASE"
 
   # Lines to prepend to .envrc for configuration
   # Use the current, resolved values of the variables
@@ -381,6 +394,13 @@ function cmd_enable_direnv() {
     # If prefix is not set, ensure it's explicitly unset or set to empty in .envrc
     # to prevent accidental inheritance from parent directories if .envrc is sourced up.
     config_lines+=("unset GPG_ENV_PREFIX")
+  fi
+  
+  # Add GPG_ENV_PASSPHRASE export only if it's explicitly set (not empty)
+  # WARNING: This will expose the passphrase in .envrc - use with caution!
+  if [ -n "$current_gpg_env_passphrase_val" ]; then
+    config_lines+=("export GPG_ENV_PASSPHRASE=\"$current_gpg_env_passphrase_val\"")
+    echo "WARNING: GPG_ENV_PASSPHRASE will be written to $envrc_file. Ensure this file is secure and not committed to version control!"
   fi
 
   if [ -f "$envrc_file" ]; then
@@ -433,6 +453,8 @@ function cmd_update_pass() {
     exit 1
   fi
 
+  # For update-pass, we always prompt for current and new passphrases interactively
+  # to ensure security, even if GPG_ENV_PASSPHRASE is set
   echo "Enter CURRENT passphrase to decrypt $GPG_ENV_FILE:"
   read -s old_passphrase
 
@@ -501,4 +523,3 @@ case "$1" in
     usage # If no valid command is given, show usage
     ;;
 esac
-
